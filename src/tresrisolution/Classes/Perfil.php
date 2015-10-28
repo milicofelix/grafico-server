@@ -13,6 +13,14 @@ class Perfil extends GraficoServer
 {
     protected $listAnalises = array();
     private $conn;
+    private $connIntranet;
+    private $connIntraRemoto;
+
+    public function __construct()
+    {
+        $this->conn = new ConexoesDB();
+
+    }
 
     public function getPerfisCompartilhados(Request $request)
     {
@@ -129,7 +137,8 @@ class Perfil extends GraficoServer
 
     public function salvaPerfilGrafico(Request $request)
     {
-        echo "Entrou no method salvaPerfilGrafico";exit;
+        $this->connIntranet     = $this->conn->getInstance('intranet');
+        $this->connIntraRemoto  = $this->conn->getInstance('intranetremoto');
 
         $xml = "";
 
@@ -140,15 +149,21 @@ class Perfil extends GraficoServer
             $perfil  = $request->getParameter("p");
             $analista = $request->getParameter("analista")	!= null && $request->getParameter("analista") == "1";
 
+            echo $analista;exit;
+
             $cd_perfil = -1;
 
-            $xml .= "SELECT cd_perfil FROM perfil_grafico_java WHERE usuario = '" . $usuario . "' AND cd_empresa = " . $empresa . " AND nm_perfil = '" . perfil . "'";
-            $rs = $statementIntranet->executeQuery($xml);
-            if( $rs->next() )
-                $cd_perfil = $rs->getInt(1);
+            $xml .= "SELECT cd_perfil FROM perfil_grafico_java WHERE usuario = '$usuario' AND cd_empresa = $empresa AND nm_perfil = '$perfil'";
+
+            $stmt = $this->connIntranet->prepare($xml);
+//            echo "<pre>";
+//            print_r($stmt);exit;
+            if($stmt->execute())
+                $cd_perfil = 1;
 
             if( $cd_perfil == -1 )
             {
+                $xml = "";
 
                 $xml .= "INSERT INTO perfil_grafico_java VALUES(";
                 $xml .= "nextval('\"perfil_cd_perfil_seq\"'::text)";
@@ -283,6 +298,7 @@ class Perfil extends GraficoServer
             }
             else
             {
+                $xml = "";
 
                 $xml .= "UPDATE perfil_grafico_java SET ";
                 $xml .= "dh_ult_acesso = now()";           // dh_ult_acesso
@@ -409,19 +425,21 @@ class Perfil extends GraficoServer
                 $xml .= " cd_perfil = " . $cd_perfil;
             }
 
-            $retorno = $statementIntranet>executeUpdate($xml);
+            $retorno = $this->connIntranet->prepare($xml)->execute();
 
-            // Ronam 17/2/2011
-            if( $analista && $this->conn ) //conexaoBancoIntranetRemoto
-                try{ $statementIntranetRemoto->executeUpdate($xml); } catch(\PDOException $e){ $e->getTraceAsString(); }
+            if( $analista && $this->connIntraRemoto ) //conexaoBancoIntranetRemoto
+                try{$this->connIntraRemoto->prepare($xml)->execute();} catch(\PDOException $e){ $e->getTraceAsString(); }
 
             if( $retorno == 1 && $cd_perfil == -1 ) // se foi um insert bem sucedido, pesquisa o cd_perfil
             {
+                $xml = "";
 
                 $xml .= "SELECT cd_perfil FROM perfil_grafico_java WHERE $usuario = '" . $usuario . "' AND cd_$empresa = " . $empresa . " AND nm_perfil = '" . $perfil . "'";
-                $rs = $statementIntranet->executeQuery($xml);
-                if( $rs->next() )
-                    $cd_perfil = $rs->getInt(1);
+                $stmt = $this->connIntranet->prepare($xml);
+//            echo "<pre>";
+//            print_r($stmt);exit;
+                if($stmt->execute())
+                    $cd_perfil = 1;
             }
 
             if( $retorno == 1 ) // grava estudos do perfil
@@ -429,13 +447,14 @@ class Perfil extends GraficoServer
 
                 $xml .= "DELETE FROM perfil_grafico_java_estudo WHERE cd_perfil = " . $cd_perfil;
 
-                $statementIntranet->executeUpdate($xml);
-                if( $analista && conexaoBancoIntranetRemoto() )
-                    try{ $statementIntranetRemoto->executeUpdate($xml); } catch(\PDOException $e){ $e->getTraceAs(); }
+                $this->connIntranet->prepare($xml)->execute();
+                if( $analista && $this->connIntraRemoto )
+                    try{ $this->connIntraRemoto->prepare($xml)->execute(); } catch(\PDOException $e){ $e->getTraceAsString(); }
 
                 $nEstudo = 1;
                 while( $retorno == 1 && $request->getParameter("e".$nEstudo) != null && !$request->getParameter("e".$nEstudo) == "livre" && !empty(trim($request->getParameter("e".$nEstudo))) )
                 {
+                    $xml = "";
                     $xml .= "INSERT INTO perfil_grafico_java_estudo VALUES(";
                     $xml .= $cd_perfil;
                     $xml .= ",'" . $request->getParameter("e".$nEstudo) . "'";     // estudo
@@ -453,15 +472,16 @@ class Perfil extends GraficoServer
                         $xml .= ",'A'"; // tipo da média
                     $xml .= ")";
 
-                    $retorno = $statementIntranet->executeUpdate($xml);
-                    if( $analista && conexaoBancoIntranetRemoto() )
-                        try{ $statementIntranetRemoto->executeUpdate($xml); } catch(\PDOException $e){ $e->getTraceAsString(); }
+                    $retorno = $this->connIntranet->prepare($xml)->execute();
+                    if( $analista && $this->connIntraRemoto )
+                        try{ $this->connIntraRemoto->prepare($xml)->execute(); } catch(\PDOException $e){ $e->getTraceAsString(); }
 
                     $nEstudo++;
                 }
             }
 
             $xml = "<retorno>" . $retorno . "</retorno>";
+
         }
         catch(\PDOException $e)
         {
